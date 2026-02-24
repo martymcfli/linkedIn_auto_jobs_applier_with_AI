@@ -166,9 +166,10 @@ def create_and_run_bot(email: str, password: str, parameters: dict, openai_api_k
             plain_text_resume = file.read()
         resume_object = Resume(plain_text_resume)
         resume_generator_manager = FacadeManager(openai_api_key, style_manager, resume_generator, resume_object, Path("data_folder/output"))
-        os.system('cls' if os.name == 'nt' else 'clear')
-        resume_generator_manager.choose_style()
-        os.system('cls' if os.name == 'nt' else 'clear')
+        # os.system('cls' if os.name == 'nt' else 'clear') # Commented out interactive style selection
+        # resume_generator_manager.choose_style() # Commented out interactive style selection
+        # os.system('cls' if os.name == 'nt' else 'clear') # Commented out interactive style selection
+        resume_generator_manager.selected_style = "Clean Blue" # Hardcode style selection
         
         job_application_profile_object = JobApplicationProfile(plain_text_resume)
         

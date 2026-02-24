@@ -11,7 +11,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompt_values import StringPromptValue
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
-from Levenshtein import distance
+from rapidfuzz.distance import Levenshtein as lev
 
 import src.strings as strings
 
@@ -124,7 +124,7 @@ class GPTAnswerer:
     @staticmethod
     def find_best_match(text: str, options: list[str]) -> str:
         distances = [
-            (option, distance(text.lower(), option.lower())) for option in options
+            (option, lev.distance(text.lower(), option.lower())) for option in options
         ]
         best_option = min(distances, key=lambda x: x[1])[0]
         return best_option

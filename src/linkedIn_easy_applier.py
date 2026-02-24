@@ -91,18 +91,29 @@ class LinkedInEasyApplier:
     
     def _get_job_description(self) -> str:
         try:
-            see_more_button = self.driver.find_element(By.XPATH, '//button[@aria-label="Click to see more description"]')
-            actions = ActionChains(self.driver)
-            actions.move_to_element(see_more_button).click().perform()
-            time.sleep(2)
-            description = self.driver.find_element(By.CLASS_NAME, 'jobs-description-content__text').text
-            return description
-        except NoSuchElementException:
-            tb_str = traceback.format_exc()
-            raise Exception("Job description 'See more' button not found: \nTraceback:\n{tb_str}")
+            # Try to click "See more" button (may not always exist)
+            try:
+                see_more_button = self.driver.find_element(By.XPATH, '//button[contains(@aria-label, "see more") or contains(@aria-label, "Show more")]')
+                ActionChains(self.driver).move_to_element(see_more_button).click().perform()
+                time.sleep(1)
+            except:
+                pass
+            # Try multiple selectors for description
+            for selector in ['jobs-description-content__text', 'jobs-description__content', 'jobs-box__html-content']:
+                try:
+                    description = self.driver.find_element(By.CLASS_NAME, selector).text
+                    if description:
+                        return description
+                except:
+                    continue
+            # Fallback: grab any large text block in the detail pane
+            try:
+                detail = self.driver.find_element(By.CSS_SELECTOR, '.jobs-search__job-details, .scaffold-layout__detail')
+                return detail.text[:3000]
+            except:
+                return "No description available"
         except Exception:
-            tb_str = traceback.format_exc()
-            raise Exception(f"Error getting Job description: \nTraceback:\n{tb_str}")
+            return "No description available"
 
     def _get_job_recruiter(self):
         try:

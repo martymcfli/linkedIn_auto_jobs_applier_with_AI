@@ -6,6 +6,8 @@ from itertools import product
 from pathlib import Path
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import src.utils as utils
 from src.job import Job
 from src.linkedIn_easy_applier import LinkedInEasyApplier
@@ -45,7 +47,6 @@ class LinkedInJobManager:
             self.resume_path = None
         self.output_file_directory = Path(parameters['outputFileDirectory'])
         self.env_config = EnvironmentKeys()
-        #self.old_question()
 
     def set_gpt_answerer(self, gpt_answerer):
         self.gpt_answerer = gpt_answerer
@@ -58,7 +59,7 @@ class LinkedInJobManager:
         searches = list(product(self.positions, self.locations))
         random.shuffle(searches)
         page_sleep = 0
-        minimum_time = 60 * 15
+        minimum_time = 20
         minimum_page_time = time.time() + minimum_time
 
         for position, location in searches:
@@ -79,25 +80,25 @@ class LinkedInJobManager:
 
                     time_left = minimum_page_time - time.time()
                     if time_left > 0:
-                        utils.printyellow(f"Sleeping for {time_left} seconds.")
+                        utils.printyellow(f"Sleeping for {time_left:.0f} seconds.")
                         time.sleep(time_left)
                         minimum_page_time = time.time() + minimum_time
                     if page_sleep % 5 == 0:
                         sleep_time = random.randint(5, 34)
-                        utils.printyellow(f"Sleeping for {sleep_time / 60} minutes.")
+                        utils.printyellow(f"Sleeping for {sleep_time / 60:.1f} minutes.")
                         time.sleep(sleep_time)
                         page_sleep += 1
-            except Exception:
-                traceback.format_exc()
-                pass
+            except Exception as e:
+                utils.printred(f"Error on search page: {e}")
+                utils.printred(traceback.format_exc())
             time_left = minimum_page_time - time.time()
             if time_left > 0:
-                utils.printyellow(f"Sleeping for {time_left} seconds.")
+                utils.printyellow(f"Sleeping for {time_left:.0f} seconds.")
                 time.sleep(time_left)
                 minimum_page_time = time.time() + minimum_time
             if page_sleep % 5 == 0:
                 sleep_time = random.randint(50, 90)
-                utils.printyellow(f"Sleeping for {sleep_time / 60} minutes.")
+                utils.printyellow(f"Sleeping for {sleep_time / 60:.1f} minutes.")
                 time.sleep(sleep_time)
                 page_sleep += 1
 
@@ -108,30 +109,64 @@ class LinkedInJobManager:
                 raise Exception("No more jobs on this page")
         except NoSuchElementException:
             pass
-        
-        job_results = self.driver.find_element(By.CLASS_NAME, "jobs-search-results-list")
-        utils.scroll_slow(self.driver, job_results)
-        utils.scroll_slow(self.driver, job_results, step=300, reverse=True)
-        job_list_elements = self.driver.find_elements(By.CLASS_NAME, 'scaffold-layout__list-container')[0].find_elements(By.CLASS_NAME, 'jobs-search-results__list-item')
+
+        # Wait for job list items to load
+        try:
+            WebDriverWait(self.driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "li.scaffold-layout__list-item"))
+            )
+        except Exception:
+            utils.printred("Could not load job results list, refreshing...")
+            self.driver.refresh()
+            time.sleep(5)
+            try:
+                WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "li.scaffold-layout__list-item"))
+                )
+            except Exception:
+                raise Exception("Job list never loaded after refresh")
+
+        # Scroll the list to load all items
+        try:
+            job_results = self.driver.find_element(By.CSS_SELECTOR, ".scaffold-layout__list")
+            utils.scroll_slow(self.driver, job_results)
+            utils.scroll_slow(self.driver, job_results, step=300, reverse=True)
+        except Exception:
+            pass
+
+        time.sleep(2)
+        job_list_elements = self.driver.find_elements(By.CSS_SELECTOR, 'li.scaffold-layout__list-item')
         if not job_list_elements:
-            raise Exception("No job class elements found on page")
-        job_list = [Job(*self.extract_job_information_from_tile(job_element)) for job_element in job_list_elements] 
+            raise Exception("No job list items found on page")
+
+        job_list = [Job(*self.extract_job_information_from_tile(job_element)) for job_element in job_list_elements]
+        # Filter out jobs with no title (empty cards)
+        job_list = [j for j in job_list if j.title]
+        utils.printyellow(f"Found {len(job_list)} jobs on this page")
+
         for job in job_list:
+            utils.printyellow(f"Processing: {job.title} at {job.company} [{job.apply_method}]")
             if self.is_blacklisted(job.title, job.company, job.link):
                 utils.printyellow(f"Blacklisted {job.title} at {job.company}, skipping...")
                 self.write_to_file(job, "skipped")
                 continue
             try:
-                if job.apply_method not in {"Continue", "Applied", "Apply"}:
-                    self.easy_applier_component.job_apply(job)
-                    self.write_to_file(job, "success")
+                if job.apply_method in {"Continue", "Applied", "Viewed"}:
+                    utils.printyellow(f"Already applied/viewed/external: {job.title} at {job.company}, skipping...")
+                    self.write_to_file(job, "skipped")
+                    continue
+                utils.printyellow(f"Applying to: {job.title} at {job.company}...")
+                self.easy_applier_component.job_apply(job)
+                utils.printyellow(f"Successfully applied to: {job.title} at {job.company}!")
+                self.write_to_file(job, "success")
             except Exception as e:
+                utils.printred(f"Failed to apply to {job.title}: {e}")
                 utils.printred(traceback.format_exc())
                 self.write_to_file(job, "failed")
                 continue
-        
+
     def write_to_file(self, job, file_name):
-        pdf_path = Path(job.pdf_path).resolve()
+        pdf_path = Path(job.pdf_path).resolve() if job.pdf_path else Path(".")
         pdf_path = pdf_path.as_uri()
         data = {
             "company": job.company,
@@ -177,29 +212,34 @@ class LinkedInJobManager:
         url_parts.append("f_LF=f_AL")  # Easy Apply
         base_url = "&".join(url_parts)
         return f"?{base_url}{date_param}"
-    
+
     def next_job_page(self, position, location, job_page):
         self.driver.get(f"https://www.linkedin.com/jobs/search/{self.base_search_url}&keywords={position}{location}&start={job_page * 25}")
-    
+
     def extract_job_information_from_tile(self, job_tile):
         job_title, company, job_location, apply_method, link = "", "", "", "", ""
         try:
-            job_title = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title').text
-            link = job_tile.find_element(By.CLASS_NAME, 'job-card-list__title').get_attribute('href').split('?')[0]
-            company = job_tile.find_element(By.CLASS_NAME, 'job-card-container__primary-description').text
+            title_el = job_tile.find_element(By.CSS_SELECTOR, 'a.job-card-container__link')
+            job_title = title_el.text.strip()
+            link = title_el.get_attribute('href').split('?')[0]
         except:
             pass
         try:
-            job_location = job_tile.find_element(By.CLASS_NAME, 'job-card-container__metadata-item').text
+            company = job_tile.find_element(By.CSS_SELECTOR, '.artdeco-entity-lockup__subtitle').text.strip()
         except:
             pass
         try:
-            apply_method = job_tile.find_element(By.CLASS_NAME, 'job-card-container__apply-method').text
+            job_location = job_tile.find_element(By.CSS_SELECTOR, '.artdeco-entity-lockup__caption').text.strip()
         except:
-            apply_method = "Applied"
+            pass
+        try:
+            footer = job_tile.find_element(By.CSS_SELECTOR, '.job-card-container__footer-wrapper')
+            apply_method = footer.text.strip()
+        except:
+            apply_method = ""
 
         return job_title, company, job_location, link, apply_method
-    
+
     def is_blacklisted(self, job_title, company, link):
         job_title_words = job_title.lower().split(' ')
         title_blacklisted = any(word in job_title_words for word in self.title_blacklist)

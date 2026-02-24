@@ -39,7 +39,7 @@ def scroll_slow(driver, scrollable_element, start=0, end=3600, step=100, reverse
                     driver.execute_script(script_scroll_to, scrollable_element, position)
                 except Exception as e:
                     print(f"Error during scrolling: {e}")
-                time.sleep(random.uniform(1.0, 2.6))
+                time.sleep(random.uniform(0.3, 0.8))
             driver.execute_script(script_scroll_to, scrollable_element, end)
             time.sleep(1)
         else:
@@ -71,10 +71,7 @@ def chromeBrowserOptions():
     options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])  # Esclude switch della modalità automatica e logging
 
     # Preferenze per contenuti
-    prefs = {
-        "profile.default_content_setting_values.images": 2,  # Disabilita il caricamento delle immagini
-        "profile.managed_default_content_settings.stylesheets": 2,  # Disabilita il caricamento dei fogli di stile
-    }
+    prefs = {}
     options.add_experimental_option("prefs", prefs)
 
     if len(chromeProfilePath) > 0:
