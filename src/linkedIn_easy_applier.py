@@ -429,22 +429,23 @@ class LinkedInEasyApplier:
         if not question_text or question_text == 'unknown question':
             return
 
-        # Skip LinkedIn profile education/work history section fields entirely
-        # These are pre-filled from your profile and shouldn't be touched
+        # Detect if this field is inside an education or work history section
+        in_education_section = False
         try:
-            section_ancestor = field.find_element(By.XPATH, './ancestor::div[contains(@class, "jobs-easy-apply-form-section")]')
-            section_text = section_ancestor.text.lower()[:200]
-            if any(kw in section_text for kw in ['education', 'school name', 'degree', 'work experience', 'title at']):
-                utils.printyellow(f"  Skipping profile section field: {question_text[:40]}")
-                return
+            section_ancestor = field.find_element(By.XPATH, './ancestor::div[contains(@class, "jobs-easy-apply-form-section") or contains(@class, "form-section")]')
+            section_text = section_ancestor.text.lower()[:300]
+            if any(kw in section_text for kw in ['education', 'school name', 'degree', 'work experience']):
+                in_education_section = True
         except:
             pass
 
-        # Handle location/city typeahead fields — type and select from dropdown
-        # ONLY for questions about YOUR current location, not education/work fields
+        # Handle location/city typeahead fields — ONLY for YOUR current location
         location_keywords = ['your city', 'your location', 'where are you located', 'current location', 'current city', 'location (city)', 'city you', 'relocat', 'where do you live', 'based in', 'reside']
         is_location_q = any(kw in question_text for kw in location_keywords)
-        if is_location_q:
+        # If field just says "city" but we're in an education section, it's asking for school city not your city
+        if not is_location_q and 'city' in question_text and not in_education_section:
+            is_location_q = True
+        if is_location_q and not in_education_section:
             utils.printyellow(f"  Location Q: {question_text[:60]} — typing Brooklyn, NY")
             # Click field to focus, then clear properly
             field.click()
@@ -577,19 +578,32 @@ class LinkedInEasyApplier:
             utils.printyellow(f"  Portfolio: {question_text[:40]} -> www.omccormick.com")
             return
 
-        # Education fields
+        # Education fields — also handle city/state/dates if we're in an education section
         degree_keywords = ['degree', 'highest level of education', 'education level', 'school', 'university', 'college', 'institution', 'field of study', 'major']
-        if any(kw in question_text for kw in degree_keywords):
-            if any(kw in question_text for kw in ['school', 'university', 'college', 'institution']):
+        is_education_field = any(kw in question_text for kw in degree_keywords) or in_education_section
+        if is_education_field:
+            if any(kw in question_text for kw in ['school', 'university', 'college', 'institution', 'school name']):
                 answer = "Colorado State University Global"
-            elif any(kw in question_text for kw in ['field of study', 'major', 'concentration']):
+            elif any(kw in question_text for kw in ['field of study', 'major', 'concentration', 'discipline']):
                 answer = "Business Management"
+            elif any(kw in question_text for kw in ['degree', 'education level', 'highest level']):
+                answer = "Bachelor of Science"
             elif 'gpa' in question_text or 'grade' in question_text:
-                answer = "Cum Laude"
+                answer = "3.5"
+            elif 'city' in question_text:
+                answer = "Denver"
+            elif 'state' in question_text:
+                answer = "Colorado"
+            elif 'country' in question_text:
+                answer = "United States"
+            elif any(kw in question_text for kw in ['start', 'from', 'begin']):
+                answer = "2023"
+            elif any(kw in question_text for kw in ['end', 'completion', 'graduation', 'to date']):
+                answer = "2025"
             else:
                 answer = "Bachelor of Science in Business Management"
             self._enter_text(field, answer)
-            utils.printyellow(f"  Degree: {question_text[:40]} -> {answer}")
+            utils.printyellow(f"  Education: {question_text[:40]} -> {answer}")
             return
 
         # Referral / how did you hear
