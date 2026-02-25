@@ -198,17 +198,26 @@ class LinkedInEasyApplier:
 
     def _check_for_errors(self) -> None:
         modal = self.driver.find_element(By.CLASS_NAME, 'jobs-easy-apply-modal')
+        # If we're on a review or submit page, never raise — just return
+        try:
+            btn = modal.find_element(By.CLASS_NAME, "artdeco-button--primary")
+            btn_text = btn.text.lower().strip()
+            if 'submit' in btn_text or 'review' in btn_text:
+                return
+        except:
+            pass
         error_elements = modal.find_elements(By.CLASS_NAME, 'artdeco-inline-feedback--error')
         if error_elements:
-            error_texts = [e.text for e in error_elements]
+            error_texts = [e.text for e in error_elements if e.text.strip()]
+            if not error_texts:
+                return
             utils.printred(f"  Form errors detected: {error_texts}")
-            # Don't give up — the form is still open, just log it and let the next fill_up cycle try again
-            # Only raise if we've already retried
             if hasattr(self, '_error_retry_count'):
                 self._error_retry_count += 1
             else:
                 self._error_retry_count = 1
-            if self._error_retry_count >= 3:
+            # Give it more attempts before giving up
+            if self._error_retry_count >= 6:
                 self._error_retry_count = 0
                 raise Exception(f"Failed after retries. Errors: {error_texts}")
             utils.printyellow("  Retrying form fill...")
@@ -411,26 +420,35 @@ class LinkedInEasyApplier:
             return
 
         # Handle location/city typeahead fields — type and select from dropdown
-        # Only match YOUR location questions, not school/education location fields
-        location_keywords = ['your city', 'your location', 'where are you located', 'current location', 'current city', 'location (city)', 'your address']
+        # Match location questions but NOT school/education location fields
+        location_keywords = ['your city', 'your location', 'where are you located', 'current location', 'current city', 'location (city)', 'your address', 'city you', 'relocat', 'where do you live', 'based in', 'reside']
         education_exclude = ['school', 'university', 'college', 'institution', 'education', 'degree']
         is_location_q = any(kw in question_text for kw in location_keywords)
+        # Also detect typeahead fields by checking for aria attributes
+        if not is_location_q:
+            aria_role = field.get_attribute('role') or ''
+            aria_auto = field.get_attribute('aria-autocomplete') or ''
+            if ('city' in question_text or 'location' in question_text) and (aria_auto or 'combobox' in aria_role):
+                is_location_q = True
         is_education_q = any(kw in question_text for kw in education_exclude)
         if is_location_q and not is_education_q:
-            utils.printyellow(f"  Location Q: {question_text[:60]} — typing Brooklyn, NY and selecting")
-            field.clear()
+            utils.printyellow(f"  Location Q: {question_text[:60]} — typing Brooklyn, NY")
+            # Click field to focus, then clear properly
+            field.click()
             time.sleep(0.3)
-            # Type slowly so LinkedIn autocomplete triggers
-            for char in "Brooklyn":
+            field.send_keys(Keys.CONTROL + "a")
+            field.send_keys(Keys.DELETE)
+            time.sleep(0.3)
+            # Try typing "Brooklyn, NY" slowly
+            for char in "Brooklyn, NY":
                 field.send_keys(char)
                 time.sleep(0.1)
-            time.sleep(2.5)
-            # The typeahead dropdown is inside the modal — scope search to modal
+            time.sleep(3)
+            # Scope typeahead search to modal
             try:
                 modal = self.driver.find_element(By.CSS_SELECTOR, '.jobs-easy-apply-modal')
             except:
                 modal = self.driver
-            # Try multiple selectors for typeahead suggestions within modal
             typeahead_selectors = [
                 '.search-typeahead-v2__hit',
                 '[data-test-single-typeahead-entity-form-search-result]',
@@ -444,38 +462,111 @@ class LinkedInEasyApplier:
                     suggestions = modal.find_elements(By.CSS_SELECTOR, sel)
                     if suggestions:
                         utils.printyellow(f"  Found {len(suggestions)} typeahead suggestions with '{sel}'")
-                        # Click the first visible suggestion
                         for s in suggestions:
                             if s.is_displayed():
                                 s.click()
                                 clicked = True
-                                utils.printyellow(f"  Selected location from typeahead: {s.text[:40]}")
+                                utils.printyellow(f"  Selected: {s.text[:40]}")
                                 break
                         if clicked:
                             break
                 except:
                     continue
             if not clicked:
-                # Fallback: use keyboard to select first suggestion
-                utils.printyellow(f"  No typeahead found via CSS, trying keyboard selection")
+                # Try clearing and typing just "Brooklyn" instead
+                utils.printyellow(f"  No suggestions for 'Brooklyn, NY' — trying just 'Brooklyn'")
+                field.click()
+                field.send_keys(Keys.CONTROL + "a")
+                field.send_keys(Keys.DELETE)
+                time.sleep(0.3)
+                for char in "Brooklyn":
+                    field.send_keys(char)
+                    time.sleep(0.1)
+                time.sleep(3)
+                for sel in typeahead_selectors:
+                    try:
+                        suggestions = modal.find_elements(By.CSS_SELECTOR, sel)
+                        if suggestions:
+                            for s in suggestions:
+                                if s.is_displayed():
+                                    s.click()
+                                    clicked = True
+                                    utils.printyellow(f"  Selected: {s.text[:40]}")
+                                    break
+                            if clicked:
+                                break
+                    except:
+                        continue
+            if not clicked:
+                # Last resort: keyboard
+                utils.printyellow(f"  Keyboard fallback: arrow down + enter")
                 field.send_keys(Keys.ARROW_DOWN)
                 time.sleep(0.5)
                 field.send_keys(Keys.ENTER)
-                time.sleep(0.3)
             time.sleep(1)
             return
 
-        # Handle portfolio/website questions
-        portfolio_keywords = ['portfolio', 'website', 'personal site', 'github', 'other link', 'professional link']
-        if any(kw in question_text for kw in portfolio_keywords):
-            utils.printyellow(f"  Portfolio Q: {question_text[:60]} — answering with omccormick.com")
-            self._enter_text(field, "www.omccormick.com")
+        # ===== HARDCODED FIELD HANDLERS =====
+        # These prevent GPT misrouting (e.g. "address" -> self_identification -> "White")
+
+        # Personal info fields
+        if any(kw in question_text for kw in ['first name', 'given name']):
+            self._enter_text(field, "Owen")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> Owen")
+            return
+        if any(kw in question_text for kw in ['last name', 'surname', 'family name']):
+            self._enter_text(field, "McCormick")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> McCormick")
+            return
+        if any(kw in question_text for kw in ['full name']):
+            self._enter_text(field, "Owen McCormick")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> Owen McCormick")
+            return
+        if any(kw in question_text for kw in ['email', 'e-mail']):
+            self._enter_text(field, "mcmcowen@gmail.com")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> mcmcowen@gmail.com")
+            return
+        if any(kw in question_text for kw in ['phone', 'mobile', 'cell']):
+            self._enter_text(field, "3472681742")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> 3472681742")
+            return
+        if any(kw in question_text for kw in ['linkedin']):
+            self._enter_text(field, "https://www.linkedin.com/in/owen-p-mccormick/")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> LinkedIn URL")
+            return
+        if any(kw in question_text for kw in ['street', 'address', 'mailing']):
+            self._enter_text(field, "Brooklyn, NY")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> Brooklyn, NY")
+            return
+        if any(kw in question_text for kw in ['zip', 'postal code']):
+            self._enter_text(field, "11201")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> 11201")
+            return
+        if question_text in ['state', 'state/province']:
+            self._enter_text(field, "New York")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> New York")
+            return
+        if question_text in ['country']:
+            self._enter_text(field, "United States")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> United States")
             return
 
-        # Handle degree/education text fields concisely
+        # Pronouns
+        if 'pronoun' in question_text:
+            self._enter_text(field, "He/Him")
+            utils.printyellow(f"  Personal: {question_text[:40]} -> He/Him")
+            return
+
+        # Portfolio/website
+        portfolio_keywords = ['portfolio', 'website', 'personal site', 'github', 'other link', 'professional link']
+        if any(kw in question_text for kw in portfolio_keywords):
+            self._enter_text(field, "www.omccormick.com")
+            utils.printyellow(f"  Portfolio: {question_text[:40]} -> www.omccormick.com")
+            return
+
+        # Education fields
         degree_keywords = ['degree', 'highest level of education', 'education level', 'school', 'university', 'college', 'institution', 'field of study', 'major']
         if any(kw in question_text for kw in degree_keywords):
-            # Determine what specifically is being asked
             if any(kw in question_text for kw in ['school', 'university', 'college', 'institution']):
                 answer = "Colorado State University Global"
             elif any(kw in question_text for kw in ['field of study', 'major', 'concentration']):
@@ -484,8 +575,20 @@ class LinkedInEasyApplier:
                 answer = "Cum Laude"
             else:
                 answer = "Bachelor of Science in Business Management"
-            utils.printyellow(f"  Degree Q: {question_text[:60]} — answering: {answer}")
             self._enter_text(field, answer)
+            utils.printyellow(f"  Degree: {question_text[:40]} -> {answer}")
+            return
+
+        # Referral / how did you hear
+        if any(kw in question_text for kw in ['referr', 'how did you hear', 'who referred']):
+            self._enter_text(field, "LinkedIn")
+            utils.printyellow(f"  Referral: {question_text[:40]} -> LinkedIn")
+            return
+
+        # Notice period / start date
+        if any(kw in question_text for kw in ['notice period', 'when can you start', 'start date', 'earliest start']):
+            self._enter_text(field, "2 weeks")
+            utils.printyellow(f"  Availability: {question_text[:40]} -> 2 weeks")
             return
 
         is_numeric = self._is_numeric_field(field)

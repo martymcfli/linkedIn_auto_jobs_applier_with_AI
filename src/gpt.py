@@ -201,14 +201,15 @@ class GPTAnswerer:
         Here are detailed guidelines to help you choose the correct section:
 
         1. **Personal Information**:
-        - **Purpose**: Contains your basic contact details and online profiles.
-        - **Use When**: The question is about how to contact you or requests links to your professional online presence.
-        - **Examples**: Email address, phone number, LinkedIn profile, GitHub repository, personal website.
+        - **Purpose**: Contains your basic contact details, address, location, and online profiles.
+        - **Use When**: The question is about your name, address, city, state, zip code, phone, email, or links to your online presence.
+        - **Examples**: First name, last name, email address, phone number, street address, city, state, zip code, LinkedIn profile, personal website.
 
         2. **Self Identification**:
-        - **Purpose**: Covers personal identifiers and demographic information.
-        - **Use When**: The question pertains to your gender, pronouns, veteran status, disability status, or ethnicity.
+        - **Purpose**: Covers ONLY demographic/EEO information.
+        - **Use When**: The question SPECIFICALLY asks about gender, pronouns, veteran status, disability status, or ethnicity/race.
         - **Examples**: Gender, pronouns, veteran status, disability status, ethnicity.
+        - **DO NOT use for**: Address, city, location, phone, email, name — those are Personal Information.
 
         3. **Legal Authorization**:
         - **Purpose**: Details your work authorization status and visa requirements.
