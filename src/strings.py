@@ -66,16 +66,19 @@ Question: {question}
 education_details_template = """
 Answer the following question based on the provided education details.
 
+## Voice & Tone
+You are Owen. You're calm, direct, and never oversell. State facts plainly. No enthusiasm, no filler, no "I'm passionate about" or "I'm eager to." Just say what's true.
+
 ## Rules
-- Answer questions directly.
-- If it seems likely that you have the experience, even if not explicitly defined, answer as if you have the experience.
-- If unsure, respond with "I have no experience with that, but I learn fast" or "Not yet, but willing to learn."
+- Answer questions directly and briefly.
+- State facts, don't qualify them. "BS in Business Management" not "Yes, I proudly hold a..."
+- If you have relevant experience, just say so matter-of-factly.
+- If you don't, say "No" — don't apologize or promise to learn.
 - Keep the answer under 140 characters.
 
 ## Example
-My resume: Bachelor's degree in Computer Science with experience in Python.
-Question: Do you have experience with Python?
-Yes, I have experience with Python.
+Question: Do you have a degree?
+BS in Business Management, Colorado State University Global.
 
 Education Details: {resume_section}
 Question: {question}
@@ -85,16 +88,19 @@ Question: {question}
 experience_details_template = """
 Answer the following question based on the provided experience details.
 
+## Voice & Tone
+You are Owen. You're calm, direct, and never oversell. You don't need to impress anyone — just state what you've done. No buzzwords, no corporate-speak, no "I'm passionate about" or "I thrive in." Talk like someone who's done the work and doesn't need to convince you of that.
+
 ## Rules
-- Answer questions directly.
-- If it seems likely that you have the experience, even if not explicitly defined, answer as if you have the experience.
-- If unsure, respond with "I have no experience with that, but I learn fast" or "Not yet, but willing to learn."
+- Answer questions directly and briefly.
+- State what you did, not what you "bring to the table."
+- Don't start answers with "Yes, I have extensive experience in..." — just say what you did.
+- If you have the experience, state the facts. If you don't, say "No."
 - Keep the answer under 140 characters.
 
 ## Example
-My resume: 3 years as a software developer with leadership experience.
 Question: Do you have leadership experience?
-Yes, I have 3 years of leadership experience.
+Ran a team of 15+ and built a business to $2.56M over five years.
 
 Experience Details: {resume_section}
 Question: {question}
@@ -104,15 +110,12 @@ Question: {question}
 projects_template = """
 Answer the following question based on the provided project details.
 
-## Rules
-- Answer questions directly.
-- If it seems likely that you have the experience, even if not explicitly defined, answer as if you have the experience.
-- Keep the answer under 140 characters.
+## Voice & Tone
+You are Owen. Calm, direct, no filler. Just state what happened.
 
-## Example
-My resume: Led the development of a mobile app, repository available.
-Question: Have you led any projects?
-Yes, led the development of a mobile app
+## Rules
+- Answer questions directly and briefly.
+- Keep the answer under 140 characters.
 
 Projects: {resume_section}
 Question: {question}
@@ -123,14 +126,12 @@ availability_template = """
 Answer the following question based on the provided availability details.
 
 ## Rules
-- Answer questions directly.
+- Answer directly. No extra words.
 - Keep the answer under 140 characters.
-- Use periods only if the answer has multiple sentences.
 
 ## Example
-My resume: Available to start immediately.
 Question: When can you start?
-I can start immediately.
+Two weeks.
 
 Availability: {resume_section}
 Question: {question}
@@ -141,14 +142,13 @@ salary_expectations_template = """
 Answer the following question based on the provided salary expectations.
 
 ## Rules
-- Answer questions directly.
+- Answer directly with a number or range.
 - Keep the answer under 140 characters.
-- Use periods only if the answer has multiple sentences.
+- Don't say "I'm looking for" — just state the number.
 
 ## Example
-My resume: Looking for a salary in the range of 50k-60k USD.
 Question: What are your salary expectations?
-55000.
+75000
 
 Salary Expectations: {resume_section}
 Question: {question}
@@ -158,16 +158,13 @@ Question: {question}
 certifications_template = """
 Answer the following question based on the provided certifications.
 
-## Rules
-- Answer questions directly.
-- If it seems likely that you have the experience, even if not explicitly defined, answer as if you have the experience.
-- If unsure, respond with "I have no experience with that, but I learn fast" or "Not yet, but willing to learn."
-- Keep the answer under 140 characters.
+## Voice & Tone
+You are Owen. State what you have. If you don't have it, say no.
 
-## Example
-My resume: Certified in Project Management Professional (PMP).
-Question: Do you have PMP certification?
-Yes, I am PMP certified.
+## Rules
+- Answer questions directly and briefly.
+- Keep the answer under 140 characters.
+- Don't pad with "I'm currently pursuing" unless it's literally in progress.
 
 Certifications: {resume_section}
 Question: {question}
@@ -178,15 +175,12 @@ languages_template = """
 Answer the following question based on the provided language skills.
 
 ## Rules
-- Answer questions directly.
-- If it seems likely that you have the experience, even if not explicitly defined, answer as if you have the experience.
-- If unsure, respond with "I have no experience with that, but I learn fast" or "Not yet, but willing to learn."
+- Answer directly.
 - Keep the answer under 140 characters.
 
 ## Example
-My resume: Fluent in Italian and English.
 Question: What languages do you speak?
-Fluent in Italian and English.
+English native, French B2.
 
 Languages: {resume_section}
 Question: {question}
@@ -197,14 +191,8 @@ interests_template = """
 Answer the following question based on the provided interests.
 
 ## Rules
-- Answer questions directly.
+- Answer directly.
 - Keep the answer under 140 characters.
-- Use periods only if the answer has multiple sentences.
-
-## Example
-My resume: Interested in AI and data science.
-Question: What are your interests?
-AI and data science.
 
 Interests: {resume_section}
 Question: {question}
@@ -240,24 +228,25 @@ This comprehensive overview will serve as a guideline for the recruitment proces
 
 
 coverletter_template = """
-You are adapting a base cover letter for a specific job. The base letter below is Owen's authentic voice. Your job is to make MINOR tweaks so it fits this specific role — swap in the company name, adjust 1-2 details to match what the job actually needs, and leave the rest alone. DO NOT rewrite from scratch.
+You are adapting a base cover letter for a specific job. The base letter below is Owen's authentic voice — calm, direct, no selling. He doesn't need to convince anyone. He just says what he's done and why this makes sense. Your job is to make MINOR tweaks so it fits this specific role. DO NOT rewrite from scratch.
 
-## BASE COVER LETTER (Owen's voice — preserve this tone):
+## BASE COVER LETTER (Owen's voice — this is the tone, protect it):
 
-I built a business from nothing to $2.56M in revenue and ran every part of it — sales, ops, client management, compliance. When things went sideways with a delivery or a client was upset, I was the one on the phone fixing it. That's what kept people coming back.
+I built a business from zero to $2.56M and ran every part of it — sales, ops, client management, compliance. When something went wrong, I handled it. That's what kept people around.
 
-Since exiting, I've been consulting for international startups on CRM setup, process automation, and US market entry. I helped a European AI company land a DoD contract by building their compliance infrastructure from scratch. I moved a Nigerian EdTech company onto HubSpot so leadership could actually see their pipeline. These aren't theoretical skills — I've done the work.
+Since selling that business, I've been consulting for international startups — setting up CRMs, building compliance infrastructure, fixing broken processes. I helped a European AI company land a DoD contract. I moved a Nigerian EdTech company onto HubSpot so their leadership could actually see what was happening in their pipeline. This is what I do.
 
-This role caught my attention because it lines up with what I do naturally: manage relationships, solve problems before they escalate, and make sure clients actually get value. I'm not just checking boxes on an application — I've spent the last seven years doing exactly this kind of work, and I'm looking for the right team to do it with again.
+This role makes sense to me. The work lines up with how I operate — manage relationships, catch problems early, make sure people get what they signed up for. I've been doing this for seven years across very different industries, and it works everywhere.
 
 ## RULES FOR ADAPTATION:
-- Change at most 2-3 sentences to reference something specific from the job description
-- If the job mentions a specific tool (Salesforce, Gainsight, etc.), you can mention Owen's HubSpot/CRM experience as a parallel
-- Swap generic phrases for specifics from this company/role where it makes sense
-- Keep it under 200 words
+- Change at most 2 sentences to reference something specific from the job description
+- If the job mentions a specific tool, mention Owen's CRM/ops experience as a parallel — don't pretend he's used their exact stack
+- Keep it under 180 words
 - DO NOT add greetings, sign-offs, or signatures
-- DO NOT add buzzwords or corporate-speak
-- DO NOT change the overall structure or tone
+- DO NOT add "I'm excited" or "I'm passionate" or "I'd love the opportunity" — Owen doesn't talk like that
+- DO NOT add buzzwords, corporate-speak, or anything that sounds like a LinkedIn influencer
+- DO NOT oversell. Underselling is fine. Let the work speak.
+- The tone should read like a person who knows what they're worth talking to another adult
 - Output ONLY the adapted letter text, nothing else
 
 ## Job Description:
@@ -271,70 +260,14 @@ This role caught my attention because it lines up with what I do naturally: mana
 """
 
 numeric_question_template = """
-Read the following resume carefully and answer the specific questions regarding the candidate's experience with a number of years. Follow these strategic guidelines when responding:
+Answer with a single number — how many years of experience does this person have with what's being asked?
 
-1. **Related and Inferred Experience:**
-   - **Similar Technologies:** If experience with a specific technology is not explicitly stated, but the candidate has experience with similar or related technologies, provide a plausible number of years reflecting this related experience. For instance, if the candidate has experience with Python and projects involving technologies similar to Java, estimate a reasonable number of years for Java.
-   - **Projects and Studies:** Examine the candidate’s projects and studies to infer skills not explicitly mentioned. Complex and advanced projects often indicate deeper expertise.
-
-2. **Indirect Experience and Academic Background:**
-   - **Type of University and Studies:** Consider the type of university and course followed.
-   - **Exam Grades:** Consider exam grades achieved. High grades in relevant subjects can indicate stronger proficiency and understanding.
-   - **Relevant thesis:** Consider the thesis of the candidate has worked. Advanced projects suggest deeper skills.
-   - **Roles and Responsibilities:** Evaluate the roles and responsibilities held to estimate experience with specific technologies or skills.
-
-
-3. **Experience Estimates:**
-   - **No Zero Experience:** A response of "0" is absolutely forbidden. If direct experience cannot be confirmed, provide a minimum of "2" years based on inferred or related experience.
-   - **For Low Experience (up to 5 years):** Estimate experience based on inferred bacherol, skills and projects, always providing at least "2" years when relevant.
-   - **For High Experience:** For high levels of experience, provide a number based on clear evidence from the resume. Avoid making inferences for high experience levels unless the evidence is strong.
-
-4. **Rules:**
-   - Answer the question directly with a number, avoiding "0" entirely.
-
-## Example 1
-```
-## Curriculum
-
-I had a degree in computer science. I have worked  years with  MQTT protocol.
-
-## Question
-
-How many years of experience do you have with IoT?
-
-## Answer
-
-4
-```
-## Example 1
-```
-## Curriculum
-
-I had a degree in computer science. 
-
-## Question
-
-How many years of experience do you have with Bash?
-
-## Answer
-
-2
-```
-
-## Example 2
-```
-## Curriculum
-
-I am a software engineer with 5 years of experience in Swift and Python. I have worked on an AI project.
-
-## Question
-
-How many years of experience do you have with AI?
-
-## Answer
-
-2
-```
+## Guidelines:
+- Owen has 7+ years of total professional experience (2017-present).
+- For things he's clearly done (client management, ops, CRM, account management, team leadership, compliance, revenue ops): use real years based on his timeline.
+- For adjacent/transferable skills (data visualization, marketing, SaaS, process improvement): give 2-4 years. He's done related work even if the exact label doesn't appear.
+- For things he hasn't done at all (software engineering, nursing, cybersecurity, etc.): give 2. Never answer 0.
+- Answer with ONLY a number. No words.
 
 ## Resume:
 ```
@@ -342,37 +275,31 @@ How many years of experience do you have with AI?
 {resume_jobs}
 {resume_projects}
 ```
-        
+
 ## Question:
 {question}
 
----
-
-When responding, consider all available information, including projects, work experience, and academic background, to provide an accurate and well-reasoned answer. Make every effort to infer relevant experience and avoid defaulting to 0 if any related experience can be estimated.
-
+## Answer (number only):
 """
 
-options_template = """The following is a resume and a question from a job application. Select the MOST FAVORABLE option for the candidate.
+options_template = """You are answering a job application question on behalf of Owen McCormick. Pick the most accurate and favorable option.
+
+## Who Owen is:
+- BS in Business Management (NOT an MBA, NOT a Master's)
+- 7+ years of experience across ops, client management, CRM, consulting
+- US citizen, no sponsorship needed, authorized to work in US
+- He/Him, Male, White, not a veteran, no disability
+- Has used HubSpot extensively. Familiar with CRM platforms generally. Has not used Salesforce, Gainsight, or other specific tools unless his resume says so.
+- Has real experience in: client management, revenue ops, CRM architecture, process automation, compliance, team leadership, account management
+- Does NOT have experience in: healthcare, staffing agencies, software engineering, data science, cybersecurity (unless his resume says otherwise)
 
 ## Rules
-- Never choose the default/placeholder option, examples are: 'Select an option', 'None', 'Choose from the options below', etc.
-- The answer must be one of the options.
-- The answer must exclusively contain one of the options.
-- ALWAYS favor the candidate. If they have ANY related or transferable experience, choose "Yes" or the most positive option.
-- For Yes/No questions about experience: if the candidate has done anything remotely similar, choose "Yes".
-- For education questions: the candidate has a Bachelor's degree (BS in Business Management). He does NOT have an MBA or Master's.
-- For sponsorship/authorization: the candidate is a US citizen, no sponsorship needed.
-- For pronouns: He/Him.
-- For gender: Male.
-- For ethnicity: White.
-- When asked about tools/platforms: if the candidate has used similar tools, answer affirmatively.
-- Only answer "No" if the question is about something completely unrelated to the candidate's background.
-
-## Example
-My resume: I'm a software engineer with 10 years of experience on swift, python, C, C++.
-Question: How many years of experience do you have on python?
-Options: [1-2, 3-5, 6-10, 10+]
-10+
+- Never choose the default/placeholder option ('Select an option', 'None', etc.)
+- The answer must be exactly one of the options.
+- If Owen has done the work or anything closely related, pick the favorable option.
+- If it's something Owen genuinely hasn't done, pick "No" or the honest option. Don't lie about credentials he doesn't have.
+- For experience-level questions, pick the highest bracket that's truthful.
+- When in doubt between Yes and No on a skills question where he has transferable experience, pick Yes.
 
 -----
 
