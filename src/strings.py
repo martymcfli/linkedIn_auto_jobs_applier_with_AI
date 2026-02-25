@@ -240,24 +240,25 @@ This comprehensive overview will serve as a guideline for the recruitment proces
 
 
 coverletter_template = """
-Write a short, genuine cover letter (3 paragraphs max, under 200 words total) for this job application. It should sound like a real person wrote it quickly and confidently — not like AI or a template.
+You are adapting a base cover letter for a specific job. The base letter below is Owen's authentic voice. Your job is to make MINOR tweaks so it fits this specific role — swap in the company name, adjust 1-2 details to match what the job actually needs, and leave the rest alone. DO NOT rewrite from scratch.
 
-## Voice and tone rules — THIS IS CRITICAL:
-- Write like a sharp, direct professional who doesn't waste words
-- Use short sentences. Mix in a few longer ones for flow.
-- NO buzzwords: never use "passionate", "synergy", "leverage", "thrive", "dynamic", "excited to", "I am writing to", "I believe", "unique opportunity"
-- NO filler phrases: never use "I am confident that", "I would welcome the opportunity", "I look forward to"
-- Sound like someone texting a respected colleague, not writing a college essay
-- Be specific — pull real details from the resume and job description
-- It's OK to be slightly casual. Personality > polish.
-- Do NOT start with "Dear Hiring Manager" or any greeting
-- Do NOT end with a sign-off or signature
-- Vary sentence structure. Don't start every sentence with "I"
+## BASE COVER LETTER (Owen's voice — preserve this tone):
 
-## What to include:
-- One concrete thing from the candidate's background that directly maps to what the job needs
-- Why this specific role makes sense given what they've done before
-- Keep it tight. Recruiters skim.
+I built a business from nothing to $2.56M in revenue and ran every part of it — sales, ops, client management, compliance. When things went sideways with a delivery or a client was upset, I was the one on the phone fixing it. That's what kept people coming back.
+
+Since exiting, I've been consulting for international startups on CRM setup, process automation, and US market entry. I helped a European AI company land a DoD contract by building their compliance infrastructure from scratch. I moved a Nigerian EdTech company onto HubSpot so leadership could actually see their pipeline. These aren't theoretical skills — I've done the work.
+
+This role caught my attention because it lines up with what I do naturally: manage relationships, solve problems before they escalate, and make sure clients actually get value. I'm not just checking boxes on an application — I've spent the last seven years doing exactly this kind of work, and I'm looking for the right team to do it with again.
+
+## RULES FOR ADAPTATION:
+- Change at most 2-3 sentences to reference something specific from the job description
+- If the job mentions a specific tool (Salesforce, Gainsight, etc.), you can mention Owen's HubSpot/CRM experience as a parallel
+- Swap generic phrases for specifics from this company/role where it makes sense
+- Keep it under 200 words
+- DO NOT add greetings, sign-offs, or signatures
+- DO NOT add buzzwords or corporate-speak
+- DO NOT change the overall structure or tone
+- Output ONLY the adapted letter text, nothing else
 
 ## Job Description:
 ```
@@ -351,12 +352,21 @@ When responding, consider all available information, including projects, work ex
 
 """
 
-options_template = """The following is a resume and an answered question about the resume, the answer is one of the options.
+options_template = """The following is a resume and a question from a job application. Select the MOST FAVORABLE option for the candidate.
 
 ## Rules
 - Never choose the default/placeholder option, examples are: 'Select an option', 'None', 'Choose from the options below', etc.
 - The answer must be one of the options.
 - The answer must exclusively contain one of the options.
+- ALWAYS favor the candidate. If they have ANY related or transferable experience, choose "Yes" or the most positive option.
+- For Yes/No questions about experience: if the candidate has done anything remotely similar, choose "Yes".
+- For education questions: the candidate has a Bachelor's degree (BS in Business Management). He does NOT have an MBA or Master's.
+- For sponsorship/authorization: the candidate is a US citizen, no sponsorship needed.
+- For pronouns: He/Him.
+- For gender: Male.
+- For ethnicity: White.
+- When asked about tools/platforms: if the candidate has used similar tools, answer affirmatively.
+- Only answer "No" if the question is about something completely unrelated to the candidate's background.
 
 ## Example
 My resume: I'm a software engineer with 10 years of experience on swift, python, C, C++.

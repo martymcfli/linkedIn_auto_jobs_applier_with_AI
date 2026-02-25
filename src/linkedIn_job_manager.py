@@ -59,8 +59,10 @@ class LinkedInJobManager:
         searches = list(product(self.positions, self.locations))
         random.shuffle(searches)
         page_sleep = 0
-        minimum_time = 20
+        minimum_time = 10
         minimum_page_time = time.time() + minimum_time
+        self.successful_applications = 0
+        self.max_applications = int(os.environ.get("MAX_APPLICATIONS", 0))  # 0 = unlimited
 
         for position, location in searches:
             location_url = "&location=" + location
@@ -77,6 +79,8 @@ class LinkedInJobManager:
                     utils.printyellow("Starting the application process for this page...")
                     self.apply_jobs()
                     utils.printyellow("Applying to jobs on this page has been completed!")
+                    if self.max_applications > 0 and self.successful_applications >= self.max_applications:
+                        break
 
                     time_left = minimum_page_time - time.time()
                     if time_left > 0:
@@ -91,6 +95,8 @@ class LinkedInJobManager:
             except Exception as e:
                 utils.printred(f"Error on search page: {e}")
                 utils.printred(traceback.format_exc())
+            if self.max_applications > 0 and self.successful_applications >= self.max_applications:
+                break
             time_left = minimum_page_time - time.time()
             if time_left > 0:
                 utils.printyellow(f"Sleeping for {time_left:.0f} seconds.")
@@ -139,35 +145,54 @@ class LinkedInJobManager:
         if not job_list_elements:
             raise Exception("No job list items found on page")
 
-        job_list = [Job(*self.extract_job_information_from_tile(job_element)) for job_element in job_list_elements]
-        # Filter out jobs with no title (empty cards)
-        job_list = [j for j in job_list if j.title]
-        utils.printyellow(f"Found {len(job_list)} jobs on this page")
+        utils.printyellow(f"Found {len(job_list_elements)} job cards on this page")
 
-        for job in job_list:
+        for job_tile in job_list_elements:
+            # Extract info from tile
+            job_title, company, job_location, link, apply_method = self.extract_job_information_from_tile(job_tile)
+            if not job_title:
+                continue
+
+            job = Job(job_title, company, job_location, link, apply_method)
             utils.printyellow(f"Processing: {job.title} at {job.company} [{job.apply_method}]")
+
             if self.is_blacklisted(job.title, job.company, job.link):
                 utils.printyellow(f"Blacklisted {job.title} at {job.company}, skipping...")
                 self.write_to_file(job, "skipped")
                 continue
+
+            if job.apply_method in {"Continue", "Applied", "Viewed"}:
+                utils.printyellow(f"Already applied/viewed/external: {job.title} at {job.company}, skipping...")
+                self.write_to_file(job, "skipped")
+                continue
+
             try:
-                if job.apply_method in {"Continue", "Applied", "Viewed"}:
-                    utils.printyellow(f"Already applied/viewed/external: {job.title} at {job.company}, skipping...")
-                    self.write_to_file(job, "skipped")
-                    continue
+                # Click the job card in the sidebar to load it in the detail pane
+                # This keeps us on the search page where Easy Apply actually works
+                utils.printyellow(f"Clicking job card for: {job.title}...")
+                card_link = job_tile.find_element(By.CSS_SELECTOR, 'a.job-card-container__link')
+                card_link.click()
+                time.sleep(random.uniform(1.5, 2.5))
+
+                # Now apply from the detail pane
                 utils.printyellow(f"Applying to: {job.title} at {job.company}...")
                 self.easy_applier_component.job_apply(job)
-                utils.printyellow(f"Successfully applied to: {job.title} at {job.company}!")
+                self.successful_applications += 1
+                utils.printyellow(f"Successfully applied to: {job.title} at {job.company}! ({self.successful_applications} total)")
                 self.write_to_file(job, "success")
+                if self.max_applications > 0 and self.successful_applications >= self.max_applications:
+                    utils.printyellow(f"Reached {self.max_applications} successful applications. Stopping.")
+                    return
             except Exception as e:
                 utils.printred(f"Failed to apply to {job.title}: {e}")
-                utils.printred(traceback.format_exc())
                 self.write_to_file(job, "failed")
                 continue
 
     def write_to_file(self, job, file_name):
-        pdf_path = Path(job.pdf_path).resolve() if job.pdf_path else Path(".")
-        pdf_path = pdf_path.as_uri()
+        if job.pdf_path:
+            pdf_path = Path(job.pdf_path).resolve().as_uri()
+        else:
+            pdf_path = ""
         data = {
             "company": job.company,
             "job_title": job.title,

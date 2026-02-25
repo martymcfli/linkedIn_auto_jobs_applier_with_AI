@@ -21,8 +21,11 @@ import src.utils as utils
 
 class LinkedInEasyApplier:
     def __init__(self, driver: Any, resume_dir: Optional[str], set_old_answers: List[Tuple[str, str, str]], gpt_answerer: Any, resume_generator_manager):
-        if resume_dir is None or not os.path.exists(resume_dir):
+        if resume_dir is None or not os.path.exists(str(resume_dir)):
+            utils.printred(f"Resume path not found: {resume_dir}")
             resume_dir = None
+        else:
+            utils.printyellow(f"Resume loaded: {resume_dir}")
         self.driver = driver
         self.resume_path = resume_dir
         self.set_old_answers = set_old_answers
@@ -49,53 +52,57 @@ class LinkedInEasyApplier:
             raise Exception(f"Error loading questions data from JSON file: \nTraceback:\n{tb_str}")
 
     def job_apply(self, job: Any):
-        self.driver.get(job.link)
-        time.sleep(random.uniform(3, 5))
+        # Don't navigate away from search results — Easy Apply only works in the search view.
+        # The job card should already be clicked by the job manager before calling this.
+        time.sleep(random.uniform(1, 2))
         try:
             easy_apply_button = self._find_easy_apply_button()
             job.set_job_description(self._get_job_description())
             job.set_recruiter_link(self._get_job_recruiter())
-            actions = ActionChains(self.driver)
-            actions.move_to_element(easy_apply_button).click().perform()
+            utils.printyellow("Clicking Easy Apply button...")
+            easy_apply_button.click()
+            # Wait for the modal to actually appear
+            WebDriverWait(self.driver, 8).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'jobs-easy-apply-modal'))
+            )
+            utils.printyellow("Easy Apply modal opened!")
+            time.sleep(random.uniform(0.5, 1))
             self.gpt_answerer.set_job(job)
             self._fill_application_form(job)
         except Exception:
             tb_str = traceback.format_exc()
+            utils.printred(f"Apply failed, discarding: {tb_str[:200]}")
             self._discard_application()
             raise Exception(f"Failed to apply to job! Original exception: \nTraceback:\n{tb_str}")
 
     def _find_easy_apply_button(self) -> WebElement:
-        attempt = 0
-        while attempt < 2:
-            self._scroll_page()
-            buttons = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_all_elements_located(
+        # Wait for the button to appear — no need to scroll the whole page first
+        try:
+            button = WebDriverWait(self.driver, 8).until(
+                EC.element_to_be_clickable(
                     (By.XPATH, '//button[contains(@class, "jobs-apply-button") and contains(., "Easy Apply")]')
                 )
             )
-            for index, _ in enumerate(buttons):
-                try:
-                    button = WebDriverWait(self.driver, 10).until(
-                        EC.element_to_be_clickable(
-                            (By.XPATH, f'(//button[contains(@class, "jobs-apply-button") and contains(., "Easy Apply")])[{index + 1}]')
-                        )
-                    )
-                    return button
-                except Exception as e:
-                    pass
-            if attempt == 0:
-                self.driver.refresh()
-                time.sleep(3)  
-            attempt += 1
-        raise Exception("No clickable 'Easy Apply' button found")
-    
+            return button
+        except Exception:
+            # One retry after refresh
+            utils.printyellow("Easy Apply button not found, refreshing page...")
+            self.driver.refresh()
+            time.sleep(3)
+            button = WebDriverWait(self.driver, 8).until(
+                EC.element_to_be_clickable(
+                    (By.XPATH, '//button[contains(@class, "jobs-apply-button") and contains(., "Easy Apply")]')
+                )
+            )
+            return button
+
     def _get_job_description(self) -> str:
         try:
             # Try to click "See more" button (may not always exist)
             try:
                 see_more_button = self.driver.find_element(By.XPATH, '//button[contains(@aria-label, "see more") or contains(@aria-label, "Show more")]')
-                ActionChains(self.driver).move_to_element(see_more_button).click().perform()
-                time.sleep(1)
+                see_more_button.click()
+                time.sleep(0.5)
             except:
                 pass
             # Try multiple selectors for description
@@ -106,9 +113,9 @@ class LinkedInEasyApplier:
                         return description
                 except:
                     continue
-            # Fallback: grab any large text block in the detail pane
+            # Fallback: grab text from detail pane
             try:
-                detail = self.driver.find_element(By.CSS_SELECTOR, '.jobs-search__job-details, .scaffold-layout__detail')
+                detail = self.driver.find_element(By.CSS_SELECTOR, '.scaffold-layout__detail')
                 return detail.text[:3000]
             except:
                 return "No description available"
@@ -116,20 +123,13 @@ class LinkedInEasyApplier:
             return "No description available"
 
     def _get_job_recruiter(self):
+        # Quick check — don't wait 10 seconds for something that's usually not there
         try:
-            hiring_team_section = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, '//h2[text()="Meet the hiring team"]'))
-            )
+            hiring_team_section = self.driver.find_element(By.XPATH, '//h2[text()="Meet the hiring team"]')
             recruiter_element = hiring_team_section.find_element(By.XPATH, './/following::a[contains(@href, "linkedin.com/in/")]')
-            recruiter_link = recruiter_element.get_attribute('href')
-            return recruiter_link
-        except Exception as e:
+            return recruiter_element.get_attribute('href')
+        except:
             return ""
-
-    def _scroll_page(self) -> None:
-        scrollable_element = self.driver.find_element(By.TAG_NAME, 'html')
-        utils.scroll_slow(self.driver, scrollable_element, step=300, reverse=False)
-        utils.scroll_slow(self.driver, scrollable_element, step=300, reverse=True)
 
     def _fill_application_form(self, job):
         while True:
@@ -138,18 +138,55 @@ class LinkedInEasyApplier:
                 break
 
     def _next_or_submit(self):
-        next_button = self.driver.find_element(By.CLASS_NAME, "artdeco-button--primary")
-        button_text = next_button.text.lower()
+        # IMPORTANT: Only look for buttons INSIDE the Easy Apply modal, not the whole page
+        modal = self.driver.find_element(By.CLASS_NAME, 'jobs-easy-apply-modal')
+
+        next_button = modal.find_element(By.CLASS_NAME, "artdeco-button--primary")
+        button_text = next_button.text.lower().strip()
+        utils.printyellow(f"  Form button: '{next_button.text.strip()}'")
+
         if 'submit application' in button_text:
             self._unfollow_company()
-            time.sleep(random.uniform(1.5, 2.5))
+            time.sleep(random.uniform(1.0, 1.5))
+            next_button.click()
+            time.sleep(random.uniform(2.0, 3.0))
+            # Dismiss the post-submit confirmation modal/overlay so it doesn't block the next job card
+            try:
+                dismiss_buttons = self.driver.find_elements(By.CSS_SELECTOR, 'button.artdeco-modal__dismiss, button[aria-label="Dismiss"], button.artdeco-toast-item__dismiss')
+                for btn in dismiss_buttons:
+                    if btn.is_displayed():
+                        btn.click()
+                        time.sleep(0.5)
+            except:
+                pass
+            return True
+
+        if 'review' in button_text:
+            # Review page — just click through, don't check for errors
+            utils.printyellow("  Clicking Review...")
             next_button.click()
             time.sleep(random.uniform(1.5, 2.5))
-            return True
-        time.sleep(random.uniform(1.5, 2.5))
+            return False
+
+        # Regular "Next" button
+        time.sleep(random.uniform(0.5, 1.0))
         next_button.click()
-        time.sleep(random.uniform(3.0, 5.0))
-        self._check_for_errors()
+        time.sleep(random.uniform(1.5, 2.5))
+
+        # Only check for errors on form pages, not review/submit pages
+        try:
+            modal = self.driver.find_element(By.CLASS_NAME, 'jobs-easy-apply-modal')
+            # Check if we're now on a review or submit page — if so, skip error check
+            try:
+                current_btn = modal.find_element(By.CLASS_NAME, "artdeco-button--primary")
+                current_text = current_btn.text.lower().strip()
+                if 'submit' in current_text or 'review' in current_text:
+                    return False
+            except:
+                pass
+            self._check_for_errors()
+        except:
+            pass
 
     def _unfollow_company(self) -> None:
         try:
@@ -160,47 +197,407 @@ class LinkedInEasyApplier:
             pass
 
     def _check_for_errors(self) -> None:
-        error_elements = self.driver.find_elements(By.CLASS_NAME, 'artdeco-inline-feedback--error')
+        modal = self.driver.find_element(By.CLASS_NAME, 'jobs-easy-apply-modal')
+        error_elements = modal.find_elements(By.CLASS_NAME, 'artdeco-inline-feedback--error')
         if error_elements:
-            raise Exception(f"Failed answering or file upload. {str([e.text for e in error_elements])}")
+            error_texts = [e.text for e in error_elements]
+            utils.printred(f"  Form errors detected: {error_texts}")
+            # Don't give up — the form is still open, just log it and let the next fill_up cycle try again
+            # Only raise if we've already retried
+            if hasattr(self, '_error_retry_count'):
+                self._error_retry_count += 1
+            else:
+                self._error_retry_count = 1
+            if self._error_retry_count >= 3:
+                self._error_retry_count = 0
+                raise Exception(f"Failed after retries. Errors: {error_texts}")
+            utils.printyellow("  Retrying form fill...")
 
     def _discard_application(self) -> None:
         try:
-            self.driver.find_element(By.CLASS_NAME, 'artdeco-modal__dismiss').click()
-            time.sleep(random.uniform(3, 5))
-            self.driver.find_elements(By.CLASS_NAME, 'artdeco-modal__confirm-dialog-btn')[0].click()
-            time.sleep(random.uniform(3, 5))
-        except Exception as e:
+            # Close the Easy Apply modal
+            dismiss_buttons = self.driver.find_elements(By.CSS_SELECTOR, 'button.artdeco-modal__dismiss, button[aria-label="Dismiss"]')
+            for btn in dismiss_buttons:
+                if btn.is_displayed():
+                    btn.click()
+                    break
+            time.sleep(random.uniform(1, 2))
+            # Confirm discard if prompted
+            confirm_buttons = self.driver.find_elements(By.CSS_SELECTOR, 'button.artdeco-modal__confirm-dialog-btn, button[data-control-name="discard_application_confirm_btn"]')
+            for btn in confirm_buttons:
+                if btn.is_displayed():
+                    btn.click()
+                    break
+            time.sleep(random.uniform(1, 2))
+        except Exception:
+            pass
+        # Final cleanup — dismiss any remaining overlays
+        try:
+            overlays = self.driver.find_elements(By.CSS_SELECTOR, '.artdeco-modal-overlay--is-top-layer button.artdeco-modal__dismiss')
+            for o in overlays:
+                if o.is_displayed():
+                    o.click()
+                    time.sleep(0.5)
+        except:
             pass
 
     def fill_up(self, job) -> None:
-        easy_apply_content = self.driver.find_element(By.CLASS_NAME, 'jobs-easy-apply-content')
-        pb4_elements = easy_apply_content.find_elements(By.CLASS_NAME, 'pb4')
-        for element in pb4_elements:
-            self._process_form_element(element, job)
-        
-    def _process_form_element(self, element: WebElement, job) -> None:
-        if self._is_upload_field(element):
-            self._handle_upload_fields(element, job)
+        modal = self.driver.find_element(By.CLASS_NAME, 'jobs-easy-apply-modal')
+
+        # Handle file uploads first
+        file_uploads = modal.find_elements(By.XPATH, ".//input[@type='file']")
+        if file_uploads:
+            self._handle_upload_fields(modal, job)
+
+        # Handle all dropdowns (select elements)
+        selects = modal.find_elements(By.TAG_NAME, 'select')
+        for select_el in selects:
+            try:
+                self._handle_single_dropdown(select_el, modal)
+            except Exception as e:
+                utils.printred(f"  Dropdown error: {e}")
+
+        # Handle all text/number inputs (skip hidden, file, radio, checkbox)
+        inputs = modal.find_elements(By.TAG_NAME, 'input')
+        for inp in inputs:
+            itype = (inp.get_attribute('type') or 'text').lower()
+            if itype in ('hidden', 'file', 'radio', 'checkbox'):
+                continue
+            try:
+                self._handle_single_input(inp, modal)
+            except Exception as e:
+                utils.printred(f"  Input error: {e}")
+
+        # Handle textareas
+        textareas = modal.find_elements(By.TAG_NAME, 'textarea')
+        for ta in textareas:
+            try:
+                self._handle_single_input(ta, modal)
+            except Exception as e:
+                utils.printred(f"  Textarea error: {e}")
+
+        # Handle radio buttons (Yes/No questions etc)
+        radio_groups = modal.find_elements(By.CLASS_NAME, 'fb-text-selectable__option')
+        if radio_groups:
+            self._handle_radio_group(radio_groups, modal)
+
+        # Handle checkboxes — check all unchecked checkboxes (consent, terms, acknowledgment, etc.)
+        checkboxes = modal.find_elements(By.XPATH, ".//input[@type='checkbox']")
+        for cb in checkboxes:
+            try:
+                if not cb.is_selected():
+                    try:
+                        label = cb.find_element(By.XPATH, './ancestor::div[1]//label')
+                        label.click()
+                    except:
+                        self.driver.execute_script("arguments[0].click()", cb)
+                    utils.printyellow(f"  Checked a checkbox")
+            except:
+                pass
+
+        # Handle fieldset-based radio groups (multiple groups on one page)
+        fieldsets = modal.find_elements(By.TAG_NAME, 'fieldset')
+        for fieldset in fieldsets:
+            radios = fieldset.find_elements(By.CSS_SELECTOR, 'input[type="radio"]')
+            if not radios:
+                continue
+            # Check if any radio in this group is already selected
+            any_selected = any(r.is_selected() for r in radios)
+            if any_selected:
+                continue
+            # Get the question from the legend
+            try:
+                question_text = fieldset.find_element(By.TAG_NAME, 'legend').text.lower().strip()
+            except:
+                question_text = ""
+            if not question_text:
+                continue
+            # Get option labels
+            labels = fieldset.find_elements(By.TAG_NAME, 'label')
+            options = [l.text.strip() for l in labels if l.text.strip()]
+            if not options:
+                continue
+            utils.printyellow(f"  Fieldset radio Q: {question_text[:60]} | options: {options[:5]}")
+            answer = self.gpt_answerer.answer_question_from_options(question_text, options)
+            # Click the matching label
+            for label in labels:
+                if answer.lower() in label.text.lower() or label.text.lower() in answer.lower():
+                    label.click()
+                    utils.printyellow(f"  Selected: {label.text.strip()}")
+                    break
+            else:
+                # Fuzzy match — click first non-empty label
+                if labels:
+                    labels[0].click()
+                    utils.printyellow(f"  Selected (fallback): {labels[0].text.strip()}")
+
+    def _handle_single_dropdown(self, select_el: WebElement, modal: WebElement) -> None:
+        select = Select(select_el)
+        options = [o.text for o in select.options]
+        current = select.first_selected_option.text.strip()
+
+        # Skip if already meaningfully selected
+        placeholder_texts = ['select an option', 'select', '', '--', 'choose an option', 'none', 'choose one', 'please select']
+        if current.lower().strip() not in placeholder_texts:
+            return
+
+        # Find the label
+        sid = select_el.get_attribute('id')
+        question_text = ""
+        if sid:
+            try:
+                label = modal.find_element(By.CSS_SELECTOR, f'label[for="{sid}"]')
+                question_text = label.text.lower().strip()
+            except:
+                pass
+        if not question_text:
+            try:
+                parent = select_el.find_element(By.XPATH, './ancestor::div[contains(@class, "fb-dash-form-element") or contains(@class, "form-element")]')
+                question_text = parent.text.split('\n')[0].lower().strip()
+            except:
+                question_text = "unknown dropdown question"
+
+        utils.printyellow(f"  Dropdown Q: {question_text[:60]} | options: {options[:5]}")
+
+        # Check cache
+        for item in self.all_data:
+            if self._sanitize_text(question_text) in item.get('question', '') and item.get('type') == 'dropdown':
+                try:
+                    select.select_by_visible_text(item['answer'])
+                    utils.printyellow(f"  Selected (cached): {item['answer']}")
+                    return
+                except:
+                    break
+
+        answer = self.gpt_answerer.answer_question_from_options(question_text, options)
+        self._save_questions_to_json({'type': 'dropdown', 'question': question_text, 'answer': answer})
+        try:
+            select.select_by_visible_text(answer)
+        except:
+            # Fuzzy match
+            best = self.gpt_answerer.find_best_match(answer, options)
+            select.select_by_visible_text(best)
+            answer = best
+        utils.printyellow(f"  Selected: {answer}")
+
+    def _handle_single_input(self, field: WebElement, modal: WebElement) -> None:
+        # Skip if already filled
+        current_val = field.get_attribute('value') or ''
+        if current_val.strip():
+            return
+
+        # Find the label
+        fid = field.get_attribute('id')
+        question_text = ""
+        if fid:
+            try:
+                label = modal.find_element(By.CSS_SELECTOR, f'label[for="{fid}"]')
+                question_text = label.text.lower().strip()
+            except:
+                pass
+        if not question_text:
+            try:
+                parent = field.find_element(By.XPATH, './ancestor::div[contains(@class, "fb-dash-form-element") or contains(@class, "form-element")]')
+                labels = parent.find_elements(By.TAG_NAME, 'label')
+                if labels:
+                    question_text = labels[0].text.lower().strip()
+            except:
+                pass
+        if not question_text:
+            question_text = field.get_attribute('aria-label') or field.get_attribute('placeholder') or 'unknown question'
+            question_text = question_text.lower().strip()
+
+        if not question_text or question_text == 'unknown question':
+            return
+
+        # Handle location/city typeahead fields — type and select from dropdown
+        # Only match YOUR location questions, not school/education location fields
+        location_keywords = ['your city', 'your location', 'where are you located', 'current location', 'current city', 'location (city)', 'your address']
+        education_exclude = ['school', 'university', 'college', 'institution', 'education', 'degree']
+        is_location_q = any(kw in question_text for kw in location_keywords)
+        is_education_q = any(kw in question_text for kw in education_exclude)
+        if is_location_q and not is_education_q:
+            utils.printyellow(f"  Location Q: {question_text[:60]} — typing Brooklyn, NY and selecting")
+            field.clear()
+            time.sleep(0.3)
+            # Type slowly so LinkedIn autocomplete triggers
+            for char in "Brooklyn":
+                field.send_keys(char)
+                time.sleep(0.1)
+            time.sleep(2.5)
+            # The typeahead dropdown is inside the modal — scope search to modal
+            try:
+                modal = self.driver.find_element(By.CSS_SELECTOR, '.jobs-easy-apply-modal')
+            except:
+                modal = self.driver
+            # Try multiple selectors for typeahead suggestions within modal
+            typeahead_selectors = [
+                '.search-typeahead-v2__hit',
+                '[data-test-single-typeahead-entity-form-search-result]',
+                '.basic-typeahead__selectable',
+                '[role="option"]',
+                '[role="listbox"] li',
+            ]
+            clicked = False
+            for sel in typeahead_selectors:
+                try:
+                    suggestions = modal.find_elements(By.CSS_SELECTOR, sel)
+                    if suggestions:
+                        utils.printyellow(f"  Found {len(suggestions)} typeahead suggestions with '{sel}'")
+                        # Click the first visible suggestion
+                        for s in suggestions:
+                            if s.is_displayed():
+                                s.click()
+                                clicked = True
+                                utils.printyellow(f"  Selected location from typeahead: {s.text[:40]}")
+                                break
+                        if clicked:
+                            break
+                except:
+                    continue
+            if not clicked:
+                # Fallback: use keyboard to select first suggestion
+                utils.printyellow(f"  No typeahead found via CSS, trying keyboard selection")
+                field.send_keys(Keys.ARROW_DOWN)
+                time.sleep(0.5)
+                field.send_keys(Keys.ENTER)
+                time.sleep(0.3)
+            time.sleep(1)
+            return
+
+        # Handle portfolio/website questions
+        portfolio_keywords = ['portfolio', 'website', 'personal site', 'github', 'other link', 'professional link']
+        if any(kw in question_text for kw in portfolio_keywords):
+            utils.printyellow(f"  Portfolio Q: {question_text[:60]} — answering with omccormick.com")
+            self._enter_text(field, "www.omccormick.com")
+            return
+
+        # Handle degree/education text fields concisely
+        degree_keywords = ['degree', 'highest level of education', 'education level', 'school', 'university', 'college', 'institution', 'field of study', 'major']
+        if any(kw in question_text for kw in degree_keywords):
+            # Determine what specifically is being asked
+            if any(kw in question_text for kw in ['school', 'university', 'college', 'institution']):
+                answer = "Colorado State University Global"
+            elif any(kw in question_text for kw in ['field of study', 'major', 'concentration']):
+                answer = "Business Management"
+            elif 'gpa' in question_text or 'grade' in question_text:
+                answer = "Cum Laude"
+            else:
+                answer = "Bachelor of Science in Business Management"
+            utils.printyellow(f"  Degree Q: {question_text[:60]} — answering: {answer}")
+            self._enter_text(field, answer)
+            return
+
+        is_numeric = self._is_numeric_field(field)
+        if is_numeric:
+            question_type = 'numeric'
+            utils.printyellow(f"  Numeric Q: {question_text[:60]}")
+            # Check cache
+            for item in self.all_data:
+                if item.get('question') == self._sanitize_text(question_text) and item.get('type') == 'numeric':
+                    self._enter_text(field, str(item['answer']))
+                    utils.printyellow(f"  Answered (cached): {item['answer']}")
+                    return
+            answer = self.gpt_answerer.answer_question_numeric(question_text)
+            self._save_questions_to_json({'type': 'numeric', 'question': question_text, 'answer': answer})
+            self._enter_text(field, str(answer))
+            utils.printyellow(f"  Answered: {answer}")
         else:
-            self._fill_additional_questions()
+            question_type = 'textbox'
+            utils.printyellow(f"  Text Q: {question_text[:60]}")
+            # Check cache
+            for item in self.all_data:
+                if 'cover' not in item.get('question', '') and item.get('question') == self._sanitize_text(question_text) and item.get('type') == 'textbox':
+                    self._enter_text(field, str(item['answer']))
+                    utils.printyellow(f"  Answered (cached): {str(item['answer'])[:50]}")
+                    return
+            answer = self.gpt_answerer.answer_question_textual_wide_range(question_text)
+            self._save_questions_to_json({'type': 'textbox', 'question': question_text, 'answer': answer})
+            self._enter_text(field, str(answer))
+            utils.printyellow(f"  Answered: {str(answer)[:50]}")
 
-    def _is_upload_field(self, element: WebElement) -> bool:
-        return bool(element.find_elements(By.XPATH, ".//input[@type='file']"))
+    def _handle_radio_group(self, radios: list, modal: WebElement) -> None:
+        # Find the question text from the fieldset/legend or nearby label
+        try:
+            fieldset = radios[0].find_element(By.XPATH, './ancestor::fieldset')
+            question_text = fieldset.find_element(By.TAG_NAME, 'legend').text.lower().strip()
+        except:
+            try:
+                parent = radios[0].find_element(By.XPATH, './ancestor::div[contains(@class, "fb-dash-form-element") or contains(@class, "form-element")]')
+                question_text = parent.text.split('\n')[0].lower().strip()
+            except:
+                question_text = "yes/no question"
 
-    def _handle_upload_fields(self, element: WebElement, job) -> None:
-        file_upload_elements = self.driver.find_elements(By.XPATH, "//input[@type='file']")
+        # Resume selection page — actively select "O's rez"
+        radio_texts = ' '.join([r.text.lower() for r in radios])
+        if 'resume' in radio_texts or 'resume' in question_text or '.pdf' in radio_texts or '.docx' in radio_texts:
+            utils.printyellow(f"  Resume selection detected — looking for O's rez...")
+            for radio in radios:
+                radio_label = radio.text.lower()
+                if "o's rez" in radio_label or "o's rez" in radio_label:
+                    try:
+                        radio.find_element(By.TAG_NAME, 'label').click()
+                        utils.printyellow(f"  Selected resume: {radio.text.strip()}")
+                    except:
+                        radio.click()
+                    return
+            # If not found by name, pick the first non-CV one (skip AI-generated CVs)
+            for radio in radios:
+                radio_label = radio.text.lower()
+                if 'cv_' not in radio_label and 'cv ' not in radio_label:
+                    try:
+                        radio.find_element(By.TAG_NAME, 'label').click()
+                        utils.printyellow(f"  Selected resume (non-CV): {radio.text.strip()}")
+                    except:
+                        radio.click()
+                    return
+            utils.printyellow(f"  Could not find O's rez, leaving default")
+            return
+
+        options = [r.text.lower().strip() for r in radios if r.text.strip()]
+        if not options:
+            return
+
+        utils.printyellow(f"  Radio Q: {question_text[:60]} | options: {options}")
+
+        # Check if already selected
+        try:
+            selected = modal.find_elements(By.CSS_SELECTOR, 'input[type="radio"]:checked')
+            if selected:
+                return
+        except:
+            pass
+
+        # Check cache
+        for item in self.all_data:
+            if self._sanitize_text(question_text) in item.get('question', '') and item.get('type') == 'radio':
+                self._select_radio(radios, item['answer'])
+                utils.printyellow(f"  Selected (cached): {item['answer']}")
+                return
+
+        answer = self.gpt_answerer.answer_question_from_options(question_text, options)
+        self._save_questions_to_json({'type': 'radio', 'question': question_text, 'answer': answer})
+        self._select_radio(radios, answer)
+        utils.printyellow(f"  Selected: {answer}")
+
+    def _handle_upload_fields(self, modal: WebElement, job) -> None:
+        file_upload_elements = modal.find_elements(By.XPATH, ".//input[@type='file']")
         for element in file_upload_elements:
             parent = element.find_element(By.XPATH, "..")
             self.driver.execute_script("arguments[0].classList.remove('hidden')", element)
-            output = self.gpt_answerer.resume_or_cover(parent.text.lower())
-            if 'resume' in output:
+            parent_text = parent.text.lower()
+            # Determine if this is a resume or cover letter upload
+            if 'cover' in parent_text and 'resume' not in parent_text:
+                utils.printyellow("  Uploading cover letter...")
+                self._create_and_upload_cover_letter(element, job)
+            else:
+                # Always use the actual resume file — never generate an AI one
                 if self.resume_path is not None and self.resume_path.resolve().is_file():
+                    utils.printyellow(f"  Uploading resume: {self.resume_path.name}")
                     element.send_keys(str(self.resume_path.resolve()))
                 else:
-                    self._create_and_upload_resume(element, job)
-            elif 'cover' in output:
-                self._create_and_upload_cover_letter(element)
+                    utils.printred("  No resume file found! Skipping upload.")
+            time.sleep(1)
 
     def _create_and_upload_resume(self, element, job):
         folder_path = 'generated_cv'
@@ -216,132 +613,54 @@ class LinkedInEasyApplier:
             tb_str = traceback.format_exc()
             raise Exception(f"Upload failed: \nTraceback:\n{tb_str}")
 
-    def _create_and_upload_cover_letter(self, element: WebElement) -> None:
+    def _create_and_upload_cover_letter(self, element: WebElement, job: Any = None) -> None:
         cover_letter = self.gpt_answerer.answer_question_textual_wide_range("Write a cover letter")
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as temp_pdf_file:
             letter_path = temp_pdf_file.name
             c = canvas.Canvas(letter_path, pagesize=letter)
             _, height = letter
-            text_object = c.beginText(100, height - 100)
-            text_object.setFont("Helvetica", 12)
-            text_object.textLines(cover_letter)
+            text_object = c.beginText(72, height - 72)
+            text_object.setFont("Helvetica", 11)
+            # Word wrap at ~80 chars per line
+            for paragraph in cover_letter.split('\n'):
+                words = paragraph.split()
+                line = ""
+                for word in words:
+                    test_line = f"{line} {word}".strip()
+                    if len(test_line) > 80:
+                        text_object.textLine(line)
+                        line = word
+                    else:
+                        line = test_line
+                if line:
+                    text_object.textLine(line)
+                text_object.textLine("")  # blank line between paragraphs
             c.drawText(text_object)
             c.save()
             element.send_keys(letter_path)
 
-    def _fill_additional_questions(self) -> None:
-        form_sections = self.driver.find_elements(By.CLASS_NAME, 'jobs-easy-apply-form-section__grouping')
-        for section in form_sections:
-            self._process_form_section(section)
-            
-
-    def _process_form_section(self, section: WebElement) -> None:
-        if self._handle_terms_of_service(section):
-            return
-        if self._find_and_handle_radio_question(section):
-            return
-        if self._find_and_handle_textbox_question(section):
-            return
-        if self._find_and_handle_date_question(section):
-            return
-        if self._find_and_handle_dropdown_question(section):
-            return
-
-    def _handle_terms_of_service(self, element: WebElement) -> bool:
-        checkbox = element.find_elements(By.TAG_NAME, 'label')
-        if checkbox and any(term in checkbox[0].text.lower() for term in ['terms of service', 'privacy policy', 'terms of use']):
-            checkbox[0].click()
-            return True
-        return False
-
-    def _find_and_handle_radio_question(self, section: WebElement) -> bool:
-        question = section.find_element(By.CLASS_NAME, 'jobs-easy-apply-form-element')
-        radios = question.find_elements(By.CLASS_NAME, 'fb-text-selectable__option')
-        if radios:
-            question_text = section.text.lower()
-            options = [radio.text.lower() for radio in radios]
-            existing_answer = None
-            for item in self.all_data:
-                if self._sanitize_text(question_text) in item['question'] and item['type'] == 'radio':
-                    existing_answer = item
-                    self._select_radio(radios, existing_answer['answer'])
-                    return True
-            answer = self.gpt_answerer.answer_question_from_options(question_text, options)
-            self._save_questions_to_json({'type': 'radio', 'question': question_text, 'answer': answer})
-            self._select_radio(radios, answer)
-            return True
-        return False
-
-    def _find_and_handle_textbox_question(self, section: WebElement) -> bool:
-        text_fields = section.find_elements(By.TAG_NAME, 'input') + section.find_elements(By.TAG_NAME, 'textarea')
-        if text_fields:
-            text_field = text_fields[0]
-            question_text = section.find_element(By.TAG_NAME, 'label').text.lower()
-            is_numeric = self._is_numeric_field(text_field)
-            if is_numeric:
-                question_type = 'numeric'
-                answer = self.gpt_answerer.answer_question_numeric(question_text)
-            else:
-                question_type = 'textbox'
-                answer = self.gpt_answerer.answer_question_textual_wide_range(question_text)
-            existing_answer = None
-            for item in self.all_data:
-                if 'cover' not in item['question'] and item['question'] == self._sanitize_text(question_text) and item['type'] == question_type:
-                    existing_answer = item
-                    self._enter_text(text_field, existing_answer['answer'])
-                    return True
-            self._save_questions_to_json({'type': question_type, 'question': question_text, 'answer': answer})
-            self._enter_text(text_field, answer)
-            return True
-        return False
-
-    def _find_and_handle_date_question(self, section: WebElement) -> bool:
-        date_fields = section.find_elements(By.CLASS_NAME, 'artdeco-datepicker__input ')
-        if date_fields:
-            date_field = date_fields[0]
-            question_text = section.text.lower()
-            answer_date = self.gpt_answerer.answer_question_date()
-            answer_text = answer_date.strftime("%Y-%m-%d")
-
-            existing_answer = None
-            for item in self.all_data:
-                if  self._sanitize_text(question_text) in item['question'] and item['type'] == 'date':
-                    existing_answer = item
-                    self._enter_text(date_field, existing_answer['answer'])
-                    return True
-
-            self._save_questions_to_json({'type': 'date', 'question': question_text, 'answer': answer_text})
-            self._enter_text(date_field, answer_text)
-            return True
-        return False
-
-    def _find_and_handle_dropdown_question(self, section: WebElement) -> bool:
-        try:
-            question = section.find_element(By.CLASS_NAME, 'jobs-easy-apply-form-element')
-            question_text = question.find_element(By.TAG_NAME, 'label').text.lower()
-            dropdown = question.find_element(By.TAG_NAME, 'select')
-            if dropdown:
-                select = Select(dropdown)
-                options = [option.text for option in select.options]
-                existing_answer = None
-                for item in self.all_data:
-                    if  self._sanitize_text(question_text) in item['question'] and item['type'] == 'dropdown':
-                        existing_answer = item
-                        self._select_dropdown_option(dropdown, existing_answer['answer'])
-                        return True
-                answer = self.gpt_answerer.answer_question_from_options(question_text, options)
-                self._save_questions_to_json({'type': 'dropdown', 'question': question_text, 'answer': answer})
-                self._select_dropdown_option(dropdown, answer)
-                return True
-        except Exception:
-            return False
+    # Legacy section-based methods removed — fill_up now directly scans the modal for form elements
 
     def _is_numeric_field(self, field: WebElement) -> bool:
-        field_type = field.get_attribute('type').lower()
-        if 'numeric' in field_type:
+        field_type = (field.get_attribute('type') or '').lower()
+        if field_type == 'number':
             return True
-        class_attribute = field.get_attribute("id")
-        return class_attribute and 'numeric' in class_attribute
+        field_id = (field.get_attribute('id') or '').lower()
+        if 'numeric' in field_id:
+            return True
+        inputmode = (field.get_attribute('inputmode') or '').lower()
+        if inputmode == 'numeric':
+            return True
+        # Check the label/question for numeric hints
+        try:
+            parent = field.find_element(By.XPATH, './ancestor::div[contains(@class, "jobs-easy-apply-form-section__grouping")]')
+            label_text = parent.text.lower()
+            numeric_keywords = ['how many years', 'years of experience', 'how many', 'gpa', 'salary', 'compensation', 'rate']
+            if any(kw in label_text for kw in numeric_keywords):
+                return True
+        except:
+            pass
+        return False
 
     def _enter_text(self, element: WebElement, text: str) -> None:
         element.clear()
@@ -367,17 +686,26 @@ class LinkedInEasyApplier:
                     try:
                         data = json.load(f)
                         if not isinstance(data, list):
-                            raise ValueError("JSON file format is incorrect. Expected a list of questions.")
+                            data = []
                     except json.JSONDecodeError:
                         data = []
             except FileNotFoundError:
                 data = []
-            data.append(question_data)
+            # Update existing entry if same type+question, otherwise append
+            found = False
+            for i, item in enumerate(data):
+                if item.get('type') == question_data['type'] and item.get('question') == question_data['question']:
+                    data[i] = question_data
+                    found = True
+                    break
+            if not found:
+                data.append(question_data)
+            # Also update in-memory cache
+            self.all_data = data
             with open(output_file, 'w') as f:
                 json.dump(data, f, indent=4)
         except Exception:
-            tb_str = traceback.format_exc()
-            raise Exception(f"Error saving questions data to JSON file: \nTraceback:\n{tb_str}")
+            pass
 
     def _sanitize_text(self, text: str) -> str:
         sanitized_text = text.lower()

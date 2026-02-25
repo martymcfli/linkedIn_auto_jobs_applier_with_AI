@@ -200,7 +200,12 @@ def main(resume: Path = None):
         parameters = ConfigValidator.validate_config(config_file)
         email, password, openai_api_key = ConfigValidator.validate_secrets(secrets_file)
         
-        parameters['uploads'] = FileManager.file_paths_to_dict(resume, plain_text_resume_file)
+        uploads = FileManager.file_paths_to_dict(resume, plain_text_resume_file)
+        # Merge with uploads from config.yaml (which may have a resume path)
+        config_uploads = parameters.get('uploads', {})
+        if config_uploads and 'resume' in config_uploads and 'resume' not in uploads:
+            uploads['resume'] = Path(config_uploads['resume'])
+        parameters['uploads'] = uploads
         parameters['outputFileDirectory'] = output_folder
         
         create_and_run_bot(email, password, parameters, openai_api_key)
