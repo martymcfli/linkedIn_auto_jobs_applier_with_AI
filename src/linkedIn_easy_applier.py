@@ -429,19 +429,22 @@ class LinkedInEasyApplier:
         if not question_text or question_text == 'unknown question':
             return
 
+        # Skip LinkedIn profile education/work history section fields entirely
+        # These are pre-filled from your profile and shouldn't be touched
+        try:
+            section_ancestor = field.find_element(By.XPATH, './ancestor::div[contains(@class, "jobs-easy-apply-form-section")]')
+            section_text = section_ancestor.text.lower()[:200]
+            if any(kw in section_text for kw in ['education', 'school name', 'degree', 'work experience', 'title at']):
+                utils.printyellow(f"  Skipping profile section field: {question_text[:40]}")
+                return
+        except:
+            pass
+
         # Handle location/city typeahead fields — type and select from dropdown
-        # Match location questions but NOT school/education location fields
-        location_keywords = ['your city', 'your location', 'where are you located', 'current location', 'current city', 'location (city)', 'your address', 'city you', 'relocat', 'where do you live', 'based in', 'reside']
-        education_exclude = ['school', 'university', 'college', 'institution', 'education', 'degree']
+        # ONLY for questions about YOUR current location, not education/work fields
+        location_keywords = ['your city', 'your location', 'where are you located', 'current location', 'current city', 'location (city)', 'city you', 'relocat', 'where do you live', 'based in', 'reside']
         is_location_q = any(kw in question_text for kw in location_keywords)
-        # Also detect typeahead fields by checking for aria attributes
-        if not is_location_q:
-            aria_role = field.get_attribute('role') or ''
-            aria_auto = field.get_attribute('aria-autocomplete') or ''
-            if ('city' in question_text or 'location' in question_text) and (aria_auto or 'combobox' in aria_role):
-                is_location_q = True
-        is_education_q = any(kw in question_text for kw in education_exclude)
-        if is_location_q and not is_education_q:
+        if is_location_q:
             utils.printyellow(f"  Location Q: {question_text[:60]} — typing Brooklyn, NY")
             # Click field to focus, then clear properly
             field.click()
