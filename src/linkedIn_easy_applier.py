@@ -290,17 +290,27 @@ class LinkedInEasyApplier:
         if radio_groups:
             self._handle_radio_group(radio_groups, modal)
 
-        # Handle checkboxes — check all unchecked checkboxes (consent, terms, acknowledgment, etc.)
+        # Handle checkboxes — check consent/terms/acknowledgment, but NOT "top choice"
         checkboxes = modal.find_elements(By.XPATH, ".//input[@type='checkbox']")
         for cb in checkboxes:
             try:
                 if not cb.is_selected():
+                    # Get surrounding text to decide whether to check
                     try:
                         label = cb.find_element(By.XPATH, './ancestor::div[1]//label')
+                        label_text = label.text.lower()
+                    except:
+                        label_text = ""
+                    # Skip "top choice" and "follow" checkboxes
+                    skip_keywords = ['top choice', 'top pick', 'follow', 'stay up to date']
+                    if any(kw in label_text for kw in skip_keywords):
+                        utils.printyellow(f"  Skipping checkbox: {label_text[:40]}")
+                        continue
+                    try:
                         label.click()
                     except:
                         self.driver.execute_script("arguments[0].click()", cb)
-                    utils.printyellow(f"  Checked a checkbox")
+                    utils.printyellow(f"  Checked: {label_text[:40] if label_text else 'checkbox'}")
             except:
                 pass
 
