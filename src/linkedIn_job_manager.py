@@ -62,6 +62,7 @@ class LinkedInJobManager:
         minimum_time = 10
         minimum_page_time = time.time() + minimum_time
         self.successful_applications = 0
+        self.successful_jobs = []  # Track jobs we applied to for outreach
         self.max_applications = int(os.environ.get("MAX_APPLICATIONS", 0))  # 0 = unlimited
 
         for position, location in searches:
@@ -107,6 +108,181 @@ class LinkedInJobManager:
                 utils.printyellow(f"Sleeping for {sleep_time / 60:.1f} minutes.")
                 time.sleep(sleep_time)
                 page_sleep += 1
+
+        # After all applications, do outreach for successful jobs
+        if self.successful_jobs:
+            self.outreach_batch(self.successful_jobs)
+
+    def outreach_batch(self, jobs):
+        """For each job we applied to, find the hiring contact and draft a message."""
+        utils.printyellow(f"\n{'='*60}")
+        utils.printyellow(f"OUTREACH: Drafting messages for {len(jobs)} applications")
+        utils.printyellow(f"{'='*60}\n")
+
+        MESSAGE_TEMPLATE = (
+            "Hey {name} — I just applied for the {job_title} role at {company}. "
+            "I've spent the last seven years in client management and ran a lifestyle brand, "
+            "most recently consulting for international startups on CRM and process work. "
+            "Figured I'd reach out directly. Happy to chat if it makes sense."
+        )
+
+        for job in jobs:
+            try:
+                utils.printyellow(f"Outreach: {job.title} at {job.company}...")
+
+                # If we already have a recruiter link from the application, use it
+                if job.recruiter_link:
+                    contact_url = job.recruiter_link
+                    utils.printyellow(f"  Using recruiter link: {contact_url}")
+                else:
+                    # Navigate to the job page to find hiring team
+                    contact_url = self._find_hiring_contact(job)
+
+                if not contact_url:
+                    utils.printyellow(f"  No contact found for {job.company}, skipping outreach.")
+                    continue
+
+                # Get the person's name from their profile
+                contact_name = self._get_profile_name(contact_url)
+                if not contact_name:
+                    utils.printyellow(f"  Couldn't get name from profile, skipping.")
+                    continue
+
+                # Draft the message
+                first_name = contact_name.split()[0]
+                message = MESSAGE_TEMPLATE.format(
+                    name=first_name,
+                    job_title=job.title.split('\n')[0].strip(),
+                    company=job.company.strip()
+                )
+
+                # Open message window and type it
+                self._send_draft_message(contact_url, contact_name, message)
+                utils.printyellow(f"  Message drafted for {contact_name} — REVIEW AND HIT SEND")
+                time.sleep(2)
+
+            except Exception as e:
+                utils.printred(f"  Outreach failed for {job.company}: {e}")
+                continue
+
+        utils.printyellow(f"\n{'='*60}")
+        utils.printyellow(f"OUTREACH COMPLETE — Check LinkedIn for draft messages to review and send")
+        utils.printyellow(f"{'='*60}\n")
+
+    def _find_hiring_contact(self, job):
+        """Navigate to the job page and find the hiring team contact."""
+        try:
+            if job.link:
+                self.driver.get(job.link)
+                time.sleep(3)
+
+            # Look for "Meet the hiring team" section
+            try:
+                hiring_section = self.driver.find_element(
+                    By.XPATH, '//h2[contains(text(), "Meet the hiring team") or contains(text(), "meet the hiring team")]'
+                )
+                # Find the first profile link in or after this section
+                profile_link = hiring_section.find_element(
+                    By.XPATH, './/following::a[contains(@href, "/in/")]'
+                )
+                url = profile_link.get_attribute('href').split('?')[0]
+                utils.printyellow(f"  Found hiring team contact: {url}")
+                return url
+            except:
+                pass
+
+            # Look for recruiter/poster info in the job detail
+            try:
+                poster = self.driver.find_element(
+                    By.CSS_SELECTOR, 'a.jobs-poster__name, a[data-tracking-control-name="public_jobs_topcard-author"]'
+                )
+                url = poster.get_attribute('href').split('?')[0]
+                utils.printyellow(f"  Found job poster: {url}")
+                return url
+            except:
+                pass
+
+            # Look for any "Message" button that links to a person
+            try:
+                message_btn = self.driver.find_element(
+                    By.XPATH, '//button[contains(text(), "Message")]'
+                )
+                # The message button is usually near a profile link
+                parent = message_btn.find_element(By.XPATH, './ancestor::div[1]')
+                profile_link = parent.find_element(By.XPATH, './/a[contains(@href, "/in/")]')
+                url = profile_link.get_attribute('href').split('?')[0]
+                utils.printyellow(f"  Found messageable contact: {url}")
+                return url
+            except:
+                pass
+
+        except Exception as e:
+            utils.printred(f"  Error finding contact: {e}")
+
+        return None
+
+    def _get_profile_name(self, profile_url):
+        """Navigate to a profile and get the person's name."""
+        try:
+            self.driver.get(profile_url)
+            time.sleep(3)
+            # Try multiple selectors for the name
+            for selector in ['h1.text-heading-xlarge', 'h1.pv-top-card--list-bullet', 'h1']:
+                try:
+                    name_el = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    name = name_el.text.strip()
+                    if name and len(name) > 1:
+                        utils.printyellow(f"  Contact name: {name}")
+                        return name
+                except:
+                    continue
+        except Exception as e:
+            utils.printred(f"  Error getting profile name: {e}")
+        return None
+
+    def _send_draft_message(self, profile_url, contact_name, message):
+        """Open the message window for a contact and type the draft message."""
+        # Make sure we're on their profile
+        if self.driver.current_url.split('?')[0] != profile_url:
+            self.driver.get(profile_url)
+            time.sleep(3)
+
+        # Click the Message button on their profile
+        try:
+            msg_button = WebDriverWait(self.driver, 8).until(
+                EC.element_to_be_clickable((By.XPATH,
+                    '//button[contains(@class, "message") or contains(text(), "Message")]'
+                ))
+            )
+            msg_button.click()
+            time.sleep(2)
+        except:
+            # Try the "More" dropdown then Message
+            try:
+                more_btn = self.driver.find_element(By.XPATH, '//button[contains(@aria-label, "More actions")]')
+                more_btn.click()
+                time.sleep(1)
+                msg_option = self.driver.find_element(By.XPATH, '//span[text()="Message"]/..')
+                msg_option.click()
+                time.sleep(2)
+            except:
+                utils.printred(f"  Could not open message window for {contact_name}")
+                return
+
+        # Find the message input and type the draft
+        try:
+            # LinkedIn message box is a contenteditable div
+            msg_box = WebDriverWait(self.driver, 8).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR,
+                    'div.msg-form__contenteditable, div[role="textbox"][contenteditable="true"], div.msg-form__msg-content-container--is-active div[contenteditable]'
+                ))
+            )
+            msg_box.click()
+            time.sleep(0.5)
+            msg_box.send_keys(message)
+            utils.printyellow(f"  Typed message for {contact_name} — waiting for you to review and send")
+        except Exception as e:
+            utils.printred(f"  Could not type message: {e}")
 
     def apply_jobs(self):
         try:
@@ -178,6 +354,7 @@ class LinkedInJobManager:
                 utils.printyellow(f"Applying to: {job.title} at {job.company}...")
                 self.easy_applier_component.job_apply(job)
                 self.successful_applications += 1
+                self.successful_jobs.append(job)
                 utils.printyellow(f"Successfully applied to: {job.title} at {job.company}! ({self.successful_applications} total)")
                 self.write_to_file(job, "success")
                 if self.max_applications > 0 and self.successful_applications >= self.max_applications:
